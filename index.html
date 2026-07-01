@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pemeriksaan Kualitas Data – Anomali</title>
+  <script src="config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root{--pri:#0b5394;--pri-d:#073763;--bg:#f4f6f9;--card:#fff;--line:#e2e8f0;--ok:#188038;--warn:#e37400;--bad:#c5221f;--muted:#5f6b7a}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:#1f2937;font-size:14px}
+    a{color:var(--pri)}
+    header{background:var(--pri);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:20;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+    header h1{font-size:16px;margin:0;font-weight:600;flex:1;min-width:180px}
+    .who{font-size:12px;opacity:.9}
+    nav{display:flex;gap:6px;flex-wrap:wrap}
+    nav button{background:rgba(255,255,255,.14);color:#fff;border:0;padding:8px 14px;border-radius:20px;cursor:pointer;font-size:13px}
+    nav button.active{background:#fff;color:var(--pri);font-weight:600}
+    nav button.hidden{display:none}
+    main{padding:12px;max-width:1500px;margin:0 auto}
+    .view{display:none}.view.active{display:block}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .toolbar input[type=text],.toolbar select,.field input,.field select{padding:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;background:#fff}
+    .toolbar input[type=text]{flex:1;min-width:160px}
+    .btn{background:var(--pri);color:#fff;border:0;padding:9px 14px;border-radius:8px;cursor:pointer;font-size:13px}
+    .btn.sec{background:#eef2f7;color:var(--pri)}.btn.ok{background:var(--ok)}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .muted{color:var(--muted)}.small{font-size:12px}.count{font-weight:600}
+    .tablewrap{overflow:auto;max-height:72vh;border:1px solid var(--line);border-radius:10px;background:#fff}
+    table{border-collapse:collapse;width:100%;font-size:12.5px;white-space:nowrap}
+    th,td{border-bottom:1px solid #eef1f5;padding:7px 9px;text-align:left;vertical-align:top}
+    thead th{position:sticky;top:0;background:#eef4fb;z-index:5;font-weight:600;color:var(--pri-d)}
+    tbody tr:hover{background:#f8fbff}
+    td.wrap,th.wrap{white-space:normal;min-width:200px}
+    .sticky-col{position:sticky;left:0;background:#fff;z-index:4;min-width:160px;white-space:normal}
+    thead .sticky-col{z-index:6;background:#eef4fb}
+    .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+    .pill.open{background:#fdecec;color:var(--bad)}.pill.done{background:#e6f4ea;color:var(--ok)}
+    td select,td input.note{padding:5px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;width:100%;min-width:120px}
+    td.edit{background:#fffdf5}
+    .cards{display:none}
+    .rowcard{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+    .rowcard h3{margin:0 0 6px;font-size:14px;color:var(--pri-d)}
+    .kv{display:grid;grid-template-columns:110px 1fr;gap:2px 8px;font-size:12.5px;margin-bottom:8px}
+    .kv b{color:var(--muted);font-weight:600}
+    .field{margin-bottom:8px}
+    .field label{display:block;font-size:12px;font-weight:600;margin-bottom:3px;color:var(--pri-d)}
+    .field select,.field input{width:100%}
+    .pager{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:10px;flex-wrap:wrap}
+    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+    .stat{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center}
+    .stat .n{font-size:24px;font-weight:700;color:var(--pri)}.stat .l{font-size:12px;color:var(--muted)}
+    .bar{height:8px;background:#eef1f5;border-radius:6px;overflow:hidden}.bar>span{display:block;height:100%;background:var(--ok)}
+    #overlay{position:fixed;inset:0;background:rgba(255,255,255,.6);display:none;align-items:center;justify-content:center;z-index:50}
+    .spin{width:40px;height:40px;border:4px solid #cbd5e1;border-top-color:var(--pri);border-radius:50%;animation:sp 1s linear infinite}
+    @keyframes sp{to{transform:rotate(360deg)}}
+    #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.3s;z-index:60}
+    #toast.show{opacity:1}
+    .legend{font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5}
+    .drop{border:2px dashed #cbd5e1;border-radius:10px;padding:16px;text-align:center;color:var(--muted);background:#fbfcfe}
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:55;padding:16px}
+    .modal-bg.show{display:flex}
+    .modal{background:#fff;border-radius:12px;padding:20px;width:100%;max-width:340px;box-shadow:0 12px 34px rgba(0,0,0,.25)}
+    .modal h3{margin:0 0 14px;color:var(--pri-d)}
+    .modal .field input{width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px}
+    @media(max-width:900px){.tablewrap{display:none}.cards{display:block}}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📋 Pemeriksaan Kualitas Data – Anomali Usaha</h1>
+    <div class="who" id="who"></div>
+    <nav>
+      <button id="nav-petugas" class="active" onclick="show('petugas')">Petugas</button>
+      <button id="nav-admin" class="hidden" onclick="show('admin')">Admin / Upload</button>
+      <button id="nav-monitoring" class="hidden" onclick="show('monitoring')">Monitoring</button>
+      <button id="nav-login" onclick="loginAdmin()">🔑 Admin</button>
+      <button id="nav-logout" class="hidden" onclick="logoutAdmin()">Keluar</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- PETUGAS -->
+    <section id="view-petugas" class="view active">
+      <div class="card">
+        <div class="toolbar">
+          <input type="text" id="q" placeholder="Cari nama usaha / anomali / assignment id..." oninput="applyFilter()">
+          <select id="f-tahap" onchange="applyFilter()"><option value="">Semua Tahap</option></select>
+          <select id="f-status" onchange="applyFilter()"><option value="">Semua Status</option></select>
+          <select id="f-kec" onchange="onGeoChange()"><option value="">Semua Kecamatan</option></select>
+          <select id="f-desa" onchange="onGeoChange()"><option value="">Semua Desa</option></select>
+          <select id="f-sls" onchange="onGeoChange()"><option value="">Semua SLS</option></select>
+          <select id="f-subsls" onchange="applyFilter()"><option value="">Semua Sub SLS</option></select>
+          <select id="f-pml" onchange="applyFilter()"><option value="">Semua PML</option></select>
+          <select id="f-ppl" onchange="applyFilter()"><option value="">Semua PPL</option></select>
+          <button class="btn sec" onclick="clearFilters()">✖ Reset</button>
+          <button class="btn sec" onclick="loadData()">↻ Muat ulang</button>
+        </div>
+        <div class="small muted" style="margin-top:8px">Menampilkan <span class="count" id="shown">0</span> dari <span class="count" id="total">0</span> baris.</div>
+        <div class="legend">
+          <b>Approve PML:</b> 1=Sudah, 0=Belum &nbsp;•&nbsp;
+          <b>Perbaikan oleh PPL:</b> 1=Sudah Sesuai Lapangan, 2=Sudah, Perbaikan Isian, 0=Belum &nbsp;•&nbsp;
+          <b>Ada Galat:</b> 0=Iya, 1=Tidak (diisi admin bila Approve PML=1)
+        </div>
+      </div>
+      <div class="tablewrap"><table><thead><tr id="thead-row"></tr></thead><tbody id="tbody"></tbody></table></div>
+      <div class="cards" id="cards"></div>
+      <div class="pager" id="pager"></div>
+    </section>
+
+    <!-- ADMIN -->
+    <section id="view-admin" class="view">
+      <div class="card">
+        <h2 style="margin-top:0">⬆️ Upload Data Anomali</h2>
+        <p class="muted small">Unggah file (format seperti <i>Anomali (2).xlsx</i>). Sistem mencocokkan
+          <b>Assignment ID + Nama Anomali</b>: baris baru ditambahkan (Tahap terpilih), dan baris "Belum"
+          yang <b>hilang dari file</b> ditandai <b>"Sudah Ditindaklanjuti"</b> (lintas tahap).</p>
+        <div class="toolbar" style="margin-bottom:10px">
+          <div class="field" style="margin:0"><label>Tahap</label>
+            <select id="up-tahap"><option>1</option><option>2</option><option>3</option><option>4</option></select>
+          </div>
+        </div>
+        <label class="drop" id="drop">
+          <input type="file" id="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="fileChosen(this)">
+          <div id="drop-text">📄 Klik untuk pilih file .xlsx / .csv</div>
+        </label>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" id="btn-analisa" onclick="doPreview()" disabled>🔍 Analisa (pratinjau)</button>
+          <button class="btn ok" id="btn-terapkan" onclick="doCommit()" disabled>✅ Terapkan</button>
+          <button class="btn sec" onclick="resetUpload()">Batal</button>
+        </div>
+        <div id="preview" class="card" style="display:none;margin-top:12px;background:#f8fbff"></div>
+        <div id="up-log" class="small muted" style="margin-top:8px"></div>
+      </div>
+    </section>
+
+    <!-- MONITORING -->
+    <section id="view-monitoring" class="view">
+      <div class="card"><div class="toolbar" style="justify-content:space-between">
+        <h2 style="margin:0">📊 Monitoring Penyelesaian Anomali</h2>
+        <button class="btn sec" onclick="renderMonitoring()">↻ Muat ulang</button>
+      </div></div>
+      <div id="mon-content"></div>
+    </section>
+  </main>
+
+  <div id="login-modal" class="modal-bg"><div class="modal">
+    <h3>🔑 Login Admin</h3>
+    <div class="field"><label>Email admin</label>
+      <input type="email" id="li-user" autocomplete="username" placeholder="bpsbuleleng5108@gmail.com" onkeydown="if(event.key==='Enter')submitLogin()"></div>
+    <div class="field"><label>Password</label>
+      <input type="password" id="li-pass" autocomplete="current-password" onkeydown="if(event.key==='Enter')submitLogin()"></div>
+    <div id="li-err" class="small" style="color:var(--bad);min-height:16px;margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn sec" onclick="closeLogin()">Batal</button>
+      <button class="btn" onclick="submitLogin()">Masuk</button>
+    </div>
+  </div></div>
+
+  <div id="overlay"><div class="spin"></div></div>
+  <div id="toast"></div>
+
+<script>
+  var CFG = window.APP_CONFIG;
+  var sb  = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
+  var STATE = { all:[], filtered:[], page:1, pageSize:CFG.PAGE_SIZE||50, isAdmin:false };
+  var PENDING = null;
+
+  function $(id){ return document.getElementById(id); }
+  function overlay(on){ $('overlay').style.display = on?'flex':'none'; }
+  function toast(m){ var t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(function(){t.classList.remove('show')},2500); }
+  function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function isAdmin(){ return STATE.isAdmin===true; }
+  function normH(v){ return (v==null?'':String(v)).toLowerCase().replace(/[^a-z0-9]/g,''); }
+  function norm(v){ return (v==null?'':String(v)).replace(/\s+/g,' ').trim(); }
+  function normKey(a,n){ return normH(a)+'||'+norm(n).toLowerCase(); }
+  function padDigits(v,w){ v=norm(v); if(w&&/^\d+$/.test(v)){ while(v.length<w) v='0'+v; } return v; }
+
+  // ---------- navigation & auth ----------
+  function show(v){
+    ['petugas','admin','monitoring'].forEach(function(k){
+      $('view-'+k).classList.toggle('active',k===v);
+      var nb=$('nav-'+k); if(nb) nb.classList.toggle('active',k===v);
+    });
+    if(v==='monitoring') renderMonitoring();
+  }
+  function refreshAdminUI(){
+    $('nav-admin').classList.toggle('hidden',!isAdmin());
+    $('nav-monitoring').classList.toggle('hidden',!isAdmin());
+    $('nav-login').classList.toggle('hidden',isAdmin());
+    $('nav-logout').classList.toggle('hidden',!isAdmin());
+  }
+  function loginAdmin(){ $('li-user').value=''; $('li-pass').value=''; $('li-err').textContent=''; $('login-modal').classList.add('show'); setTimeout(function(){$('li-user').focus()},50); }
+  function closeLogin(){ $('login-modal').classList.remove('show'); }
+  async function submitLogin(){
+    var u=$('li-user').value.trim(), p=$('li-pass').value;
+    if(!u||!p){ $('li-err').textContent='Isi email & password.'; return; }
+    $('li-err').textContent='Memeriksa...';
+    var res = await sb.auth.signInWithPassword({email:u,password:p});
+    if(res.error){ $('li-err').textContent='Gagal: '+res.error.message; return; }
+    STATE.isAdmin=true; closeLogin(); refreshAdminUI(); setWho(u); toast('Login admin berhasil'); rerender();
+  }
+  async function logoutAdmin(){ await sb.auth.signOut(); STATE.isAdmin=false; refreshAdminUI(); setWho(''); show('petugas'); rerender(); toast('Keluar admin'); }
+  function setWho(email){ $('who').textContent = email ? ('👤 '+email+' (admin)') : '(mode petugas)'; }
+
+  // ---------- load data ----------
+  function mapRow(r){
+    return { row:r.id,
+      namaUsaha:r.nama_usaha, namaKec:r.nama_kec, namaDesa:r.nama_desa, namaSls:r.nama_sls,
+      kodeDesa:r.kode_desa, kodeSls:r.kode_sls, subSls:r.sub_sls,
+      assignmentId:r.assignment_id, namaAnomali:r.nama_anomali, linkFasih:r.link_fasih,
+      namaPic:r.nama_pic, namaPml:r.pml_nama, namaPpl:r.ppl_nama,
+      tahap:r.tahap, status:r.tindak_lanjut,
+      approvePml:r.approve_pml||'', perbaikanPpl:r.perbaikan_ppl||'', adaGalat:r.ada_galat||'', catatan:r.catatan||'' };
+  }
+  async function loadData(){
+    overlay(true);
+    var all=[], from=0, size=1000;   // ambil semua baris (paging server 1000/req)
+    while(true){
+      var res = await sb.from('anomali_view').select('*').order('no',{ascending:true}).range(from,from+size-1);
+      if(res.error){ overlay(false); alert('Gagal memuat:\n'+res.error.message); return; }
+      all=all.concat(res.data); if(res.data.length<size) break; from+=size;
+    }
+    overlay(false);
+    STATE.all = all.map(mapRow);
+    fillFilters(); STATE.page=1; applyFilter();
+  }
+
+  // ---------- filters ----------
+  function fillOpts(sel,arr){ var s=$(sel),f=s.options[0]; s.innerHTML=''; s.appendChild(f); (arr||[]).forEach(function(v){var o=document.createElement('option');o.value=v;o.textContent=v;s.appendChild(o);}); }
+  function fillOptsKeep(sel,arr){ var s=$(sel),cur=s.value,f=s.options[0]; s.innerHTML=''; s.appendChild(f); (arr||[]).forEach(function(v){var o=document.createElement('option');o.value=v;o.textContent=v;s.appendChild(o);}); s.value=(arr||[]).indexOf(cur)!==-1?cur:''; }
+  function uniqSort(f){ var m={}; STATE.all.forEach(function(r){var v=r[f]; if(v) m[v]=1;}); return Object.keys(m).sort(); }
+  function fillFilters(){
+    fillOpts('f-tahap',uniqSort('tahap'));
+    fillOpts('f-status',[CFG.STATUS_OPEN,CFG.STATUS_DONE]);
+    fillOpts('f-kec',uniqSort('namaKec'));
+    fillOpts('f-pml',uniqSort('namaPml'));
+    fillOpts('f-ppl',uniqSort('namaPpl'));
+    computeDeps();
+  }
+  function computeDeps(){
+    var fk=$('f-kec').value, fd=$('f-desa').value, fsls=$('f-sls').value;
+    var desa={},sls={},sub={};
+    STATE.all.forEach(function(r){
+      if(fk&&r.namaKec!==fk) return;
+      if(r.namaDesa) desa[r.namaDesa]=1;
+      if(fd&&r.namaDesa!==fd) return;
+      if(r.kodeSls) sls[r.kodeSls]=1;
+      if(fsls&&r.kodeSls!==fsls) return;
+      if(r.subSls) sub[r.subSls]=1;
+    });
+    fillOptsKeep('f-desa',Object.keys(desa).sort());
+    fillOptsKeep('f-sls',Object.keys(sls).sort());
+    fillOptsKeep('f-subsls',Object.keys(sub).sort());
+  }
+  function onGeoChange(){ computeDeps(); applyFilter(); }
+  function clearFilters(){ ['q','f-tahap','f-status','f-kec','f-desa','f-sls','f-subsls','f-pml','f-ppl'].forEach(function(id){$(id).value='';}); computeDeps(); applyFilter(); }
+  function applyFilter(){
+    var q=$('q').value.toLowerCase().trim();
+    var ft=$('f-tahap').value,fs=$('f-status').value,fk=$('f-kec').value,fd=$('f-desa').value,
+        fsls=$('f-sls').value,fsub=$('f-subsls').value,fpml=$('f-pml').value,fppl=$('f-ppl').value;
+    STATE.filtered=STATE.all.filter(function(r){
+      if(ft&&r.tahap!==ft) return false;
+      if(fs&&r.status!==fs) return false;
+      if(fk&&r.namaKec!==fk) return false;
+      if(fd&&r.namaDesa!==fd) return false;
+      if(fsls&&r.kodeSls!==fsls) return false;
+      if(fsub&&r.subSls!==fsub) return false;
+      if(fpml&&r.namaPml!==fpml) return false;
+      if(fppl&&r.namaPpl!==fppl) return false;
+      if(q){ var h=(r.namaUsaha+' '+r.namaAnomali+' '+r.assignmentId+' '+r.namaDesa+' '+r.namaSls).toLowerCase(); if(h.indexOf(q)===-1) return false; }
+      return true;
+    });
+    STATE.page=1; rerender();
+  }
+  function rerender(){
+    $('total').textContent=STATE.all.length; $('shown').textContent=STATE.filtered.length;
+    var s=(STATE.page-1)*STATE.pageSize, rows=STATE.filtered.slice(s,s+STATE.pageSize);
+    renderTable(rows); renderCards(rows); renderPager();
+  }
+  function renderPager(){
+    var pages=Math.max(1,Math.ceil(STATE.filtered.length/STATE.pageSize));
+    if(STATE.page>pages) STATE.page=pages;
+    var p=$('pager'); p.innerHTML='';
+    function b(t,pg,dis){var x=document.createElement('button');x.className='btn sec';x.textContent=t;x.disabled=dis;x.onclick=function(){STATE.page=pg;rerender();window.scrollTo(0,0);};return x;}
+    p.appendChild(b('« Awal',1,STATE.page===1));
+    p.appendChild(b('‹',Math.max(1,STATE.page-1),STATE.page===1));
+    var l=document.createElement('span'); l.className='small muted'; l.textContent='Hal '+STATE.page+' / '+pages; p.appendChild(l);
+    p.appendChild(b('›',Math.min(pages,STATE.page+1),STATE.page===pages));
+    p.appendChild(b('Akhir »',pages,STATE.page===pages));
+  }
+
+  // ---------- edit ----------
+  var OPT={ approvePml:[['','—'],['1','1 = Sudah'],['0','0 = Belum']],
+    perbaikanPpl:[['','—'],['1','1 = Sudah Sesuai Lapangan'],['2','2 = Sudah, Perbaikan Isian'],['0','0 = Belum']],
+    adaGalat:[['','—'],['0','0 = Iya'],['1','1 = Tidak']] };
+  var DBCOL={ approvePml:'approve_pml', perbaikanPpl:'perbaikan_ppl', adaGalat:'ada_galat', catatan:'catatan' };
+  function selectHtml(field,r){
+    var canGalat=field!=='adaGalat'||(isAdmin()&&r.approvePml==='1');
+    var dis=(field==='adaGalat'&&!canGalat)?' disabled':'';
+    var h='<select'+dis+' onchange="onEdit(this,'+r.row+',\''+field+'\')">';
+    OPT[field].forEach(function(o){h+='<option value="'+o[0]+'"'+(String(r[field])===o[0]?' selected':'')+'>'+esc(o[1])+'</option>';});
+    return h+'</select>';
+  }
+  function noteHtml(r){ return '<input class="note" type="text" value="'+esc(r.catatan)+'" placeholder="catatan..." onchange="onEdit(this,'+r.row+',\'catatan\')">'; }
+  async function onEdit(el,id,field){
+    var rec=STATE.all.filter(function(x){return x.row===id;})[0]; if(!rec) return;
+    var value=el.value, prev=rec[field];
+    el.disabled=true;
+    var res=await sb.from('anomali').update({[DBCOL[field]]:value}).eq('id',id);
+    el.disabled=false;
+    if(res.error){ el.value=prev; alert('Gagal menyimpan:\n'+res.error.message); return; }
+    rec[field]=value; toast('Tersimpan ✓');
+    if(field==='approvePml') rerender();
+  }
+
+  // ---------- render table / cards ----------
+  var COLS=[['namaUsaha','Nama Usaha',true],['namaKec','Kecamatan'],['namaDesa','Desa'],['namaSls','Nama SLS'],
+    ['subSls','Sub SLS'],['assignmentId','Assign. ID'],['namaAnomali','Nama Anomali','wrap'],
+    ['linkFasih','Fasih'],['namaPic','PIC'],['namaPml','PML'],['namaPpl','PPL'],['tahap','Tahap'],['status','Status']];
+  function renderTable(rows){
+    var thead=$('thead-row');
+    if(!thead.dataset.built){ var h=''; COLS.forEach(function(c){h+='<th class="'+(c[2]===true?'sticky-col':'')+(c[2]==='wrap'?'wrap':'')+'">'+esc(c[1])+'</th>';});
+      h+='<th>Approve PML</th><th>Perbaikan PPL</th><th>Ada Galat</th><th>Catatan Anomali</th>'; thead.innerHTML=h; thead.dataset.built='1'; }
+    var tb=$('tbody'); tb.innerHTML='';
+    if(!rows.length){ tb.innerHTML='<tr><td colspan="17" class="muted" style="padding:16px">Tidak ada data.</td></tr>'; return; }
+    var frag=document.createDocumentFragment();
+    rows.forEach(function(r){
+      var tr=document.createElement('tr'),h='';
+      COLS.forEach(function(c){ var v=r[c[0]];
+        if(c[0]==='linkFasih') v=v?'<a href="'+esc(v)+'" target="_blank">buka</a>':'';
+        else if(c[0]==='status') v='<span class="pill '+(r.status===CFG.STATUS_DONE?'done':'open')+'">'+esc(r.status||'-')+'</span>';
+        else v=esc(v||'');
+        h+='<td class="'+(c[2]===true?'sticky-col':'')+(c[2]==='wrap'?'wrap':'')+'">'+v+'</td>'; });
+      h+='<td class="edit">'+selectHtml('approvePml',r)+'</td><td class="edit">'+selectHtml('perbaikanPpl',r)+'</td>';
+      h+='<td class="edit">'+selectHtml('adaGalat',r)+'</td><td class="edit">'+noteHtml(r)+'</td>';
+      tr.innerHTML=h; frag.appendChild(tr);
+    });
+    tb.appendChild(frag);
+  }
+  function renderCards(rows){
+    var c=$('cards'); c.innerHTML='';
+    if(!rows.length){ c.innerHTML='<div class="muted" style="padding:16px">Tidak ada data.</div>'; return; }
+    rows.forEach(function(r){
+      var d=document.createElement('div'); d.className='rowcard';
+      var link=r.linkFasih?'<a href="'+esc(r.linkFasih)+'" target="_blank">buka Fasih</a>':'-';
+      d.innerHTML='<h3>'+esc(r.namaUsaha||'-')+' <span class="pill '+(r.status===CFG.STATUS_DONE?'done':'open')+'">'+esc(r.status||'-')+'</span></h3>'+
+        '<div class="kv"><b>Kecamatan</b><span>'+esc(r.namaKec)+'</span><b>Desa</b><span>'+esc(r.namaDesa)+'</span>'+
+        '<b>Nama SLS</b><span>'+esc(r.namaSls)+' / Sub '+esc(r.subSls)+'</span>'+
+        '<b>Assign. ID</b><span>'+esc(r.assignmentId)+' (Tahap '+esc(r.tahap||'-')+')</span>'+
+        '<b>Anomali</b><span>'+esc(r.namaAnomali)+'</span><b>Fasih</b><span>'+link+'</span>'+
+        '<b>PIC / PML / PPL</b><span>'+esc(r.namaPic||'-')+' / '+esc(r.namaPml||'-')+' / '+esc(r.namaPpl||'-')+'</span></div>'+
+        '<div class="field"><label>Approve PML</label>'+selectHtml('approvePml',r)+'</div>'+
+        '<div class="field"><label>Perbaikan oleh PPL</label>'+selectHtml('perbaikanPpl',r)+'</div>'+
+        '<div class="field"><label>Ada Galat'+(isAdmin()?'':' (admin)')+'</label>'+selectHtml('adaGalat',r)+'</div>'+
+        '<div class="field"><label>Catatan Anomali</label>'+noteHtml(r)+'</div>';
+      c.appendChild(d);
+    });
+  }
+
+  // ---------- upload (admin) ----------
+  function fileChosen(input){ if(!input.files.length) return; $('drop-text').textContent='📄 '+input.files[0].name; $('btn-analisa').disabled=false; $('btn-terapkan').disabled=true; $('preview').style.display='none'; PENDING=null; }
+  function readAoa(){ return new Promise(function(res,rej){ var f=$('file').files[0]; if(!f){rej(new Error('Pilih file dulu.'));return;} var rd=new FileReader();
+    rd.onload=function(e){ try{ var wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'}); var ws=wb.Sheets[wb.SheetNames[0]]; res(XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''})); }catch(err){rej(err);} };
+    rd.onerror=function(){rej(new Error('Gagal membaca file.'));}; rd.readAsArrayBuffer(f); }); }
+  var UP_FIELDS={ nama_usaha:['nama usaha'], kode_prov:['kode prov'], nama_prov:['nama provinsi'],
+    kode_kab:['kode kab/kota','kode kabupaten/kota'], nama_kab:['nama kab/kota','nama kabupaten/kota'],
+    kode_kec:['kode kec','kode kecamatan'], nama_kec:['nama kecamatan'], kode_desa:['kode desa'],
+    nama_desa:['nama desa/kel','nama desa'], kode_sls:['kode sls'], sub_sls:['sub sls'],
+    assignment_id:['assignment id'], nama_anomali:['nama anomali'], id_petugas:['id petugas'],
+    email_petugas:['email petugas'], link_fasih:['link fasih'], pml:['pml','nama pml'], ppl:['ppl','nama ppl'] };
+  function findCol(H,cands){ var n=H.map(normH);
+    for(var i=0;i<cands.length;i++){ var idx=n.indexOf(normH(cands[i])); if(idx!==-1) return idx; }
+    for(var j=0;j<cands.length;j++){ var cj=normH(cands[j]); for(var k=0;k<n.length;k++){ if(n[k]&&(n[k].indexOf(cj)!==-1||cj.indexOf(n[k])!==-1)) return k; } }
+    return -1; }
+  function parseItems(aoa){
+    if(!aoa||!aoa.length) throw new Error('File kosong.');
+    var hr=-1; for(var r=0;r<Math.min(20,aoa.length);r++){ if((aoa[r]||[]).map(normH).indexOf('assignmentid')!==-1){hr=r;break;} }
+    if(hr===-1) throw new Error('Baris header (Assignment ID) tak ditemukan di file.');
+    var H=aoa[hr], start=hr+1; if(aoa[start]&&/^\(\d+\)$/.test(norm(aoa[start][0]))) start=hr+2;
+    var ci={}; Object.keys(UP_FIELDS).forEach(function(f){ci[f]=findCol(H,UP_FIELDS[f]);});
+    var W=CFG.CODE_WIDTHS, items=[];
+    for(var i=start;i<aoa.length;i++){ var row=aoa[i]||[]; var g=function(f){return ci[f]!==-1?norm(row[ci[f]]):'';};
+      var aid=g('assignment_id'), anom=g('nama_anomali'); if(!aid&&!anom&&!g('nama_usaha')) continue;
+      items.push({ key:normKey(aid,anom), assignment_id:aid, nama_anomali:anom, nama_usaha:g('nama_usaha'),
+        kode_prov:padDigits(g('kode_prov'),W.kode_prov), nama_prov:g('nama_prov'),
+        kode_kab:padDigits(g('kode_kab'),W.kode_kab), nama_kab:g('nama_kab'),
+        kode_kec:padDigits(g('kode_kec'),W.kode_kec), nama_kec:g('nama_kec'),
+        kode_desa:padDigits(g('kode_desa'),W.kode_desa), nama_desa:g('nama_desa'),
+        kode_sls:padDigits(g('kode_sls'),W.kode_sls), sub_sls:padDigits(g('sub_sls'),W.sub_sls),
+        id_petugas:g('id_petugas'), email_petugas:g('email_petugas'), link_fasih:g('link_fasih'),
+        pml:g('pml'), ppl:g('ppl') });
+    }
+    return items;
+  }
+  function classify(items){
+    var existing={};
+    STATE.all.forEach(function(r){ var k=normKey(r.assignmentId,r.namaAnomali);
+      if(!existing[k]) existing[k]={openIds:[],doneIds:[]};
+      (r.status===CFG.STATUS_DONE?existing[k].doneIds:existing[k].openIds).push(r.row); });
+    var uk={},uniq=[]; items.forEach(function(it){ if(!uk[it.key]){uk[it.key]=1;uniq.push(it);} });
+    var toInsert=[],reopenIds=[],resolveIds=[],matched=0;
+    uniq.forEach(function(it){ var ex=existing[it.key];
+      if(ex&&ex.openIds.length){matched++;return;}
+      if(ex&&ex.doneIds.length){reopenIds.push(ex.doneIds[0]);return;}
+      toInsert.push(it); });
+    Object.keys(existing).forEach(function(k){ if(uk[k])return; existing[k].openIds.forEach(function(id){resolveIds.push(id);}); });
+    return { toInsert:toInsert, reopenIds:reopenIds, resolveIds:resolveIds, matched:matched, uniq:uniq.length, total:items.length };
+  }
+  function statBox(n,l){ return '<div class="stat"><div class="n">'+n+'</div><div class="l">'+esc(l)+'</div></div>'; }
+  async function doPreview(){
+    overlay(true); $('up-log').textContent='Membaca & menganalisa...';
+    try{
+      var items=parseItems(await readAoa()); var r=classify(items); var tahap=$('up-tahap').value;
+      PENDING={items:items,tahap:tahap,r:r}; overlay(false); $('up-log').textContent='';
+      $('preview').style.display='block';
+      $('preview').innerHTML='<b>Pratinjau Tahap '+esc(tahap)+'</b> (belum diterapkan):<div class="stats" style="margin-top:8px">'+
+        statBox(r.uniq,'Baris unik di file')+statBox(r.toInsert.length,'Baris BARU')+statBox(r.matched,'Cocok (tetap Belum)')+
+        statBox(r.reopenIds.length,'Dibuka lagi')+statBox(r.resolveIds.length,'Ditandai SELESAI')+'</div>';
+      $('btn-terapkan').disabled=false;
+    }catch(e){ overlay(false); $('up-log').textContent=''; alert('Gagal analisa:\n'+e.message); }
+  }
+  function chunk(a,n){ var out=[]; for(var i=0;i<a.length;i+=n) out.push(a.slice(i,i+n)); return out; }
+  async function updateStatus(ids,status){ var cs=chunk(ids,200); for(var i=0;i<cs.length;i++){ var res=await sb.from('anomali').update({tindak_lanjut:status}).in('id',cs[i]); if(res.error) throw res.error; } }
+  async function doCommit(){
+    if(!PENDING){ toast('Analisa dulu.'); return; }
+    if(!confirm('Terapkan Tahap '+PENDING.tahap+'?\nBaris "Belum" yang hilang dari file akan ditandai SELESAI.')) return;
+    overlay(true); $('up-log').textContent='Menyimpan...';
+    try{
+      var r=PENDING.r, tahap=String(PENDING.tahap);
+      await updateStatus(r.resolveIds,CFG.STATUS_DONE);
+      await updateStatus(r.reopenIds,CFG.STATUS_OPEN);
+      var startNo=STATE.all.length+1;
+      var rows=r.toInsert.map(function(it,idx){ return {
+        no:startNo+idx, tahap:tahap, nama_usaha:it.nama_usaha,
+        kode_prov:it.kode_prov, nama_prov:it.nama_prov, kode_kab:it.kode_kab, nama_kab:it.nama_kab,
+        kode_kec:it.kode_kec, nama_kec:it.nama_kec, kode_desa:it.kode_desa, nama_desa:it.nama_desa,
+        kode_sls:it.kode_sls, sub_sls:it.sub_sls, assignment_id:it.assignment_id, nama_anomali:it.nama_anomali,
+        tindak_lanjut:CFG.STATUS_OPEN, id_petugas:it.id_petugas, email_petugas:it.email_petugas,
+        link_fasih:it.link_fasih, pml:it.pml, ppl:it.ppl };});
+      var cs=chunk(rows,500); for(var i=0;i<cs.length;i++){ var res=await sb.from('anomali').insert(cs[i]); if(res.error) throw res.error; }
+      overlay(false);
+      $('up-log').innerHTML='<b style="color:var(--ok)">Selesai.</b> Baru: '+rows.length+' • Selesai: '+r.resolveIds.length+' • Dibuka lagi: '+r.reopenIds.length+' • Cocok: '+r.matched;
+      resetUpload(true); toast('Upload diterapkan ✓'); loadData();
+    }catch(e){ overlay(false); $('up-log').textContent=''; alert('Gagal menyimpan:\n'+e.message); }
+  }
+  function resetUpload(keepLog){ $('file').value=''; $('drop-text').textContent='📄 Klik untuk pilih file .xlsx / .csv'; $('btn-analisa').disabled=true; $('btn-terapkan').disabled=true; $('preview').style.display='none'; if(!keepLog)$('up-log').textContent=''; PENDING=null; }
+
+  // ---------- monitoring (agregasi dari STATE.all) ----------
+  function progTable(title,arr,keyLabel,note){
+    var h='<div class="card"><h3 style="margin-top:0">'+esc(title)+'</h3>'; if(note) h+='<p class="small muted" style="margin-top:0">'+esc(note)+'</p>';
+    h+='<div class="tablewrap" style="max-height:50vh"><table><thead><tr><th class="wrap">'+esc(keyLabel)+'</th><th>Total</th><th>Selesai</th><th>Belum</th><th style="min-width:160px">% Selesai</th></tr></thead><tbody>';
+    if(!arr.length) h+='<tr><td colspan="5" class="muted">Belum ada data.</td></tr>';
+    arr.forEach(function(r){ h+='<tr><td class="wrap">'+esc(r.nama)+'</td><td>'+r.total+'</td><td style="color:var(--ok)">'+r.selesai+'</td><td style="color:var(--bad)">'+r.belum+'</td><td><div class="bar"><span style="width:'+r.persen+'%"></span></div><span class="small muted">'+r.persen+'%</span></td></tr>'; });
+    return h+'</tbody></table></div></div>';
+  }
+  function renderMonitoring(){
+    if(!isAdmin()) return;
+    var perT={},perK={},perP={},tot=0,sel=0,bel=0,apv=0,pbk=0,gI=0,gT=0;
+    function bk(m,k,done){ if(!m[k])m[k]={t:0,s:0,b:0}; m[k].t++; done?m[k].s++:m[k].b++; }
+    STATE.all.forEach(function(r){ var done=r.status===CFG.STATUS_DONE;
+      tot++; done?sel++:bel++;
+      bk(perT,r.tahap||'(tanpa tahap)',done); bk(perK,r.namaKec||'(kosong)',done); bk(perP,r.namaPpl||'(tanpa PPL)',done);
+      if(r.approvePml==='1')apv++; if(r.perbaikanPpl==='1'||r.perbaikanPpl==='2')pbk++;
+      if(r.adaGalat==='0')gI++; else if(r.adaGalat==='1')gT++; });
+    function arr(m,sortBelum){ var a=Object.keys(m).sort().map(function(k){var b=m[k];return{nama:k,total:b.t,selesai:b.s,belum:b.b,persen:b.t?Math.round(b.s/b.t*1000)/10:0};}); if(sortBelum)a.sort(function(x,y){return y.belum-x.belum;}); return a; }
+    var pc=tot?Math.round(sel/tot*1000)/10:0;
+    var h='<div class="card"><h3 style="margin-top:0">Ringkasan Keseluruhan</h3><div class="stats">'+
+      statBox(tot,'Total Anomali')+'<div class="stat"><div class="n" style="color:var(--ok)">'+sel+'</div><div class="l">Sudah Ditindaklanjuti</div></div>'+
+      '<div class="stat"><div class="n" style="color:var(--bad)">'+bel+'</div><div class="l">Belum Tindak Lanjut</div></div>'+
+      '<div class="stat"><div class="n">'+pc+'%</div><div class="l">Persentase Selesai</div></div></div>'+
+      '<div class="stats" style="margin-top:10px">'+statBox(apv,'Approve PML = Sudah')+statBox(pbk,'Perbaikan PPL = Sudah')+statBox(gI,'Ada Galat = Iya')+statBox(gT,'Ada Galat = Tidak')+'</div></div>';
+    h+=progTable('Per Tahap',arr(perT,false),'Tahap','Berapa anomali per tahap yang sudah terselesaikan.');
+    h+=progTable('Per Kecamatan (Belum terbanyak di atas)',arr(perK,true),'Kecamatan');
+    h+=progTable('Per PPL (Belum terbanyak di atas)',arr(perP,true),'PPL');
+    $('mon-content').innerHTML=h;
+  }
+
+  // ---------- init ----------
+  (async function(){
+    if(!CFG.SUPABASE_URL||CFG.SUPABASE_URL.indexOf('YOUR-PROJECT')!==-1){ alert('config.js belum diisi: SUPABASE_URL & SUPABASE_ANON_KEY.'); }
+    var s=await sb.auth.getSession(); STATE.isAdmin=!!(s.data&&s.data.session);
+    setWho(STATE.isAdmin&&s.data.session.user?s.data.session.user.email:''); refreshAdminUI();
+    await loadData();
+    window.addEventListener('resize',function(){clearTimeout(window._rz);window._rz=setTimeout(rerender,200);});
+  })();
+</script>
+</body>
+</html>
