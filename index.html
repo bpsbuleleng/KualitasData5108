@@ -176,7 +176,7 @@
   function isAdmin(){ return STATE.isAdmin===true; }
   function normH(v){ return (v==null?'':String(v)).toLowerCase().replace(/[^a-z0-9]/g,''); }
   function norm(v){ return (v==null?'':String(v)).replace(/\s+/g,' ').trim(); }
-  function normKey(a,n){ return normH(a)+'||'+norm(n).toLowerCase(); }
+  function normKey(a,n,u){ return normH(a)+'||'+norm(n).toLowerCase()+'||'+norm(u).toLowerCase(); }
   function padDigits(v,w){ v=norm(v); if(w&&/^\d+$/.test(v)){ while(v.length<w) v='0'+v; } return v; }
 
   // ---------- navigation & auth ----------
@@ -384,8 +384,8 @@
     var ci={}; Object.keys(UP_FIELDS).forEach(function(f){ci[f]=findCol(H,UP_FIELDS[f]);});
     var W=CFG.CODE_WIDTHS, items=[];
     for(var i=start;i<aoa.length;i++){ var row=aoa[i]||[]; var g=function(f){return ci[f]!==-1?norm(row[ci[f]]):'';};
-      var aid=g('assignment_id'), anom=g('nama_anomali'); if(!aid&&!anom&&!g('nama_usaha')) continue;
-      items.push({ key:normKey(aid,anom), assignment_id:aid, nama_anomali:anom, nama_usaha:g('nama_usaha'),
+      var aid=g('assignment_id'), anom=g('nama_anomali'), nu=g('nama_usaha'); if(!aid&&!anom&&!nu) continue;
+      items.push({ key:normKey(aid,anom,nu), assignment_id:aid, nama_anomali:anom, nama_usaha:nu,
         kode_prov:padDigits(g('kode_prov'),W.kode_prov), nama_prov:g('nama_prov'),
         kode_kab:padDigits(g('kode_kab'),W.kode_kab), nama_kab:g('nama_kab'),
         kode_kec:padDigits(g('kode_kec'),W.kode_kec), nama_kec:g('nama_kec'),
@@ -398,7 +398,7 @@
   }
   function classify(items){
     var existing={};
-    STATE.all.forEach(function(r){ var k=normKey(r.assignmentId,r.namaAnomali);
+    STATE.all.forEach(function(r){ var k=normKey(r.assignmentId,r.namaAnomali,r.namaUsaha);
       if(!existing[k]) existing[k]={openIds:[],doneIds:[]};
       (r.status===CFG.STATUS_DONE?existing[k].doneIds:existing[k].openIds).push(r.row); });
     var uk={},uniq=[]; items.forEach(function(it){ if(!uk[it.key]){uk[it.key]=1;uniq.push(it);} });
